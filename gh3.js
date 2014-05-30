@@ -479,16 +479,19 @@
 
 
 	Gh3.Commit = Kind.extend({
-		constructor : function (commitInfos) {
-			this.author = commitInfos.author;
-			this.author.email = commitInfos.commit.author.email;
-			this.author.name = commitInfos.commit.author.name;
-			this.date =	commitInfos.commit.author.date;
-			this.message = commitInfos.commit.message;
-			this.sha = commitInfos.sha;
-			this.url = commitInfos.url;
-		}
-	},{});
+    constructor : function (commitInfos) {
+      var commitAuthor = commitInfos.author || commitInfos.commit.author;
+      this.author = commitAuthor;
+      if (!this.author.email)
+        this.author.email = commitInfos.commit.author.email;
+      if (!this.author.name)
+        this.author.name = commitInfos.commit.author.name;
+      this.date = commitInfos.commit.author.date;
+      this.message = commitInfos.commit.message;
+      this.sha = commitInfos.sha;
+      this.url = commitInfos.url;
+    }
+  },{});
 
 	Gh3.ItemContent = Kind.extend({
 		constructor : function (contentItem, ghUser, repositoryName, branchName) {
@@ -502,34 +505,22 @@
 
 	},{});
 
-	Gh3.File = Gh3.ItemContent.extend({
+	Gh3.CommitsSource = Gh3.ItemContent.extend({
 		constructor : function (contentItem, ghUser, repositoryName, branchName) {
-			Gh3.File.__super__.constructor.call(this, contentItem, ghUser, repositoryName, branchName);
-		},
-		fetchContent : function (callback) {
-			var that = this;
-
-			Gh3.Helper.callHttpApi({
-				service : "repos/"+that.user.login+"/"+that.repositoryName+"/contents/"+that.path,
-				success : function(res) {
-					that.content = res.data.content;
-					that.rawContent = Base64.decode(res.data.content);
-
-					if (callback) callback(null, that);
-				},
-				error : function (res) {
-					if (callback) callback(new Error(res.responseJSON.message),res);
-				}
-			});
-
+			Gh3.CommitsSource.__super__.constructor.call(this, contentItem, ghUser, repositoryName, branchName);
 		},
 		fetchCommits : function (callback) {//http://developer.github.com/v3/repos/commits/
 			var that = this;
 			that.commits = [];
 
+			var options = {};
+			if (that.path)
+				options["path"] = that.path;
+			if (that.sha)
+				options["sha"] = that.sha;
 			Gh3.Helper.callHttpApi({
 				service : "repos/"+that.user.login+"/"+that.repositoryName+"/commits",
-				data : {path: that.path },
+				data : options,
 				success : function(res) {
 					_.each(res.data, function (commit) {
 						that.commits.push(new Gh3.Commit(commit));
@@ -567,6 +558,28 @@
 			} else {
 				this.commits.sort();
 			}
+		}
+	},{});
+
+	Gh3.File = Gh3.CommitsSource.extend({
+		constructor : function (contentItem, ghUser, repositoryName, branchName) {
+			Gh3.File.__super__.constructor.call(this, contentItem, ghUser, repositoryName, branchName);
+		},
+		fetchContent : function (callback) {
+			var that = this;
+
+			Gh3.Helper.callHttpApi({
+				service : "repos/"+that.user.login+"/"+that.repositoryName+"/contents/"+that.path,
+				success : function(res) {
+					that.content = res.data.content;
+					that.rawContent = Base64.decode(res.data.content);
+
+					if (callback) callback(null, that);
+				},
+				error : function (res) {
+					if (callback) callback(new Error(res.responseJSON.message),res);
+				}
+			});
 		}
 	},{});
 
@@ -627,15 +640,10 @@
 
 	},{});
 
-	Gh3.Branch = Kind.extend({
+	Gh3.Branch = Gh3.CommitsSource.extend({
 		constructor : function (name, sha, url, ghUser, repositoryName) {
-			if (name) this.name = name;
-			if (sha) this.sha = sha;
-			if (url) this.url = url;
-
-			if (ghUser) this.user = ghUser;
-			if (repositoryName) this.repositoryName = repositoryName;
-
+			var contentItem = {name: name, sha: sha, url: url};
+			Gh3.CommitsSource.__super__.constructor.call(this, contentItem, ghUser, repositoryName, name);
 		},
 
 		fetchContents : function (callback) { //see how to refactor with Gh3.Dir
